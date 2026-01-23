@@ -20,10 +20,16 @@ def health():
 
 @app.get('/news/top')
 def top_headlines(country: str = 'ar', category: str | None = None, page_size: int = 10):
+    """
+    Fetch top news headlines from NewsAPI.
+    Supports optional filtering by category, country, and page size.
+    """
     
+    # Validate API key
     if not NEWSAPI_KEY:
         raise HTTPException(status_code=500, detail="API key not configured.")
     
+    # build request
     url = 'https://newsapi.org/v2/top-headlines'
     
     params = {'country': country, 'pageSize': page_size}
@@ -32,8 +38,31 @@ def top_headlines(country: str = 'ar', category: str | None = None, page_size: i
         
     headers = {'X-Api-Key': NEWSAPI_KEY}
     
-    r = requests.get(url, headers=headers, params=params)
-    data = r.json()
+    # call NewsAPI
+    r = requests.get(url, headers=headers, params=params, timeout=10)
     
-    return data
+    # Handle errors returned by the external News API
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    
+    # Parse external API response
+    data = r.json()
+    articles = data.get('articles', [])
+    
+    # Transform and clean articles data
+    clean_articles = [
+        {
+            'title': article.get('title'),
+            'source': (article.get('source') or {}).get('name'),
+            'publishedAt': article.get('publishedAt'),
+            'url': article.get('url'),
+        }
+        for article in articles
+    ]
+    
+    # Transform and clean articles data
+    return {
+        'totalResults': data.get('totalResults'),
+        'articles': clean_articles
+    }
     
