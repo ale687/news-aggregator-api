@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-import requests
+from app.services.news_service import fetch_top_headlines, fetch_search_results, clean_articles
 
 
 load_dotenv()
@@ -29,46 +29,29 @@ def top_headlines(country: str = 'us', category: str | None = None, page_size: i
     if not NEWSAPI_KEY:
         raise HTTPException(status_code=500, detail="API key not configured.")
     
-    # build request
-    url = 'https://newsapi.org/v2/top-headlines'
-    
-    params = {'country': country, 'pageSize': page_size}
-    if category:
-        params['category'] = category
-        
-    headers = {'X-Api-Key': NEWSAPI_KEY}
-    
-    # call NewsAPI
-    r = requests.get(url, headers=headers, params=params, timeout=10)
+    r = fetch_top_headlines(
+        api_key=NEWSAPI_KEY,
+        country=country,
+        category=category,
+        page_size=page_size
+    )
     
     # Handle errors returned by the external News API
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text)
     
-    # Parse external API response
     data = r.json()
     articles = data.get('articles', [])
+    clean = clean_articles(articles)
     
-    # Transform and clean articles data
-    clean_articles = [
-        {
-            'title': article.get('title'),
-            'source': (article.get('source') or {}).get('name'),
-            'publishedAt': article.get('publishedAt'),
-            'url': article.get('url'),
-        }
-        for article in articles
-    ]
-    
-    # Transform and clean articles data
     return {
         'totalResults': data.get('totalResults'),
-        'articles': clean_articles
+        'articles': clean
     }
     
     
 @app.get('/news/search')
-def search_news(q: str, page_size: int = 10, sort_by: str = 'publishedAt'):
+def search_news(q: str, page_size: int = 10, sort_by: str = 'publishedAt', language: str = 'en'):
     """
     Search news articles by keyword using NewsAPI.
     """
@@ -81,37 +64,23 @@ def search_news(q: str, page_size: int = 10, sort_by: str = 'publishedAt'):
     if not NEWSAPI_KEY:
         raise HTTPException(status_code=500, detail="API key not configured.")    
     
-    # build request
-    url = 'https://newsapi.org/v2/everything'
-    params = {
-        'q': q,
-        'pageSize': page_size,
-        'sortBy': sort_by,
-        'language': 'en'
-    }
-    headers = {'X-Api-Key': NEWSAPI_KEY}
+    r = fetch_search_results(
+        api_key=NEWSAPI_KEY,
+        query=q,
+        page_size=page_size,
+        sort_by=sort_by,
+        language=language
+    )
     
-    # call NewsAPI
-    r = requests.get(url, headers=headers, params=params, timeout=10)
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text)
     
     data = r.json()
     articles = data.get('articles', [])
-    
-    clean_articles = [
-        {
-            'title': a.get('title'),
-            'source': (a.get('source') or {}).get('name'),
-            'publishedAt': a.get('publishedAt'),
-            'url': a.get('url'),
-            'description': a.get('description'),
-        }
-        for a in articles
-    ]
+    clean = clean_articles(articles)
     
     return {
         'query': q,
         'totalResults': data.get('totalResults'),
-        'articles': clean_articles
+        'articles': clean
     }
